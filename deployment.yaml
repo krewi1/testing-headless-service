@@ -1,0 +1,86 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: headless-test
+  labels:
+    app: headless-test
+spec:
+  ports:
+    - port: 80
+      name: web
+  clusterIP: None
+  selector:
+    app: headless-test
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: web
+spec:
+  selector:
+    matchLabels:
+      app: headless-test
+  serviceName: "headless-test"
+  replicas: 3
+  template:
+    metadata:
+      labels:
+        app: headless-test
+    spec:
+      terminationGracePeriodSeconds: 10
+      containers:
+        - name: headless-test
+          image: krewilone/test-headless
+          env:
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: "metadata.name"
+          ports:
+            - containerPort: 3000
+              name: web
+---
+apiVersion: v1
+kind: ConfigMap
+data:
+  script.sh: |-
+    #!/bin/bash
+    while true
+    do
+     res=$(curl "http://${TARGET}:3000")
+     echo $res
+     sleep 1
+    done
+metadata:
+  name: script-configmap
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cron-test
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: test
+  template:
+    metadata:
+      labels:
+        app: test
+    spec:
+      volumes:
+        - configMap:
+            name: script-configmap
+          name: script-configmap
+      containers:
+        - name: node-cron
+          image: krewilone/ubuntu-curl
+          command: ["sh", "/script/script.sh"]
+          volumeMounts:
+            - mountPath: /script
+              name: script-configmap
+              readOnly: false
+          env:
+            - name: TARGET
+              value: "headless-test"
+
